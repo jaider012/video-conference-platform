@@ -1,0 +1,89 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Live Chat Room</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.3.2/socket.io.js"></script>
+    <style>
+      #chat-messages {
+        height: 300px;
+        overflow-y: scroll;
+        border: 1px solid #ccc;
+        padding: 10px;
+        margin-bottom: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Live Chat Room</h1>
+    <div>
+      <input type="text" id="room-id" placeholder="Room ID" />
+      <button onclick="joinRoom()">Join Room</button>
+      <button onclick="leaveRoom()">Leave Room</button>
+    </div>
+    <div id="chat-container" style="display: none">
+      <div id="chat-messages"></div>
+      <input type="text" id="message-input" placeholder="Type a message..." />
+      <button onclick="sendMessage()">Send</button>
+    </div>
+
+    <script>
+      const socket = io('http://localhost:3000');
+      let currentRoom = null;
+
+      socket.on('connect', () => {
+        console.log('Connected to server');
+      });
+
+      socket.on('joined', (data) => {
+        console.log('Joined room:', data);
+        currentRoom = data.roomId;
+        document.getElementById('chat-container').style.display = 'block';
+      });
+
+      socket.on('userJoined', (data) => {
+        console.log('User joined:', data);
+        addChatMessage(`User ${data.clientId} joined the room`);
+      });
+
+      socket.on('userLeft', (data) => {
+        console.log('User left:', data);
+        addChatMessage(`User ${data.clientId} left the room`);
+      });
+
+      socket.on('chatMessage', (data) => {
+        addChatMessage(`${data.clientId}: ${data.message}`);
+      });
+
+      function joinRoom() {
+        const roomId = document.getElementById('room-id').value;
+        socket.emit('join', { roomId });
+      }
+
+      function leaveRoom() {
+        if (currentRoom) {
+          socket.emit('leave', { roomId: currentRoom });
+          currentRoom = null;
+          document.getElementById('chat-container').style.display = 'none';
+          document.getElementById('chat-messages').innerHTML = '';
+        }
+      }
+
+      function sendMessage() {
+        const messageInput = document.getElementById('message-input');
+        const message = messageInput.value;
+        if (message && currentRoom) {
+          socket.emit('chatMessage', { roomId: currentRoom, message });
+          messageInput.value = '';
+        }
+      }
+
+      function addChatMessage(message) {
+        const chatMessages = document.getElementById('chat-messages');
+        const messageElement = document.createElement('div');
+        messageElement.textContent = message;
+        chatMessages.appendChild(messageElement);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+      }
+    </script>
+  </body>
+</html>
