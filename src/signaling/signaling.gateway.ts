@@ -31,8 +31,26 @@ interface ChatMessage {
 export class SignalingGateway {
   @WebSocketServer() server: Server;
   private logger = new Logger(SignalingGateway.name);
+  private joinDebounceTimers: Map<string, NodeJS.Timeout> = new Map();
+  private activeParticipants: Map<string, Set<string>> = new Map();
+  private readonly JOIN_DEBOUNCE_TIME = 2000; // 2 seconds debounce
 
   constructor(private roomsService: RoomsService) {}
+
+  private getOrCreateParticipantSet(roomId: string): Set<string> {
+    if (!this.activeParticipants.has(roomId)) {
+      this.activeParticipants.set(roomId, new Set());
+    }
+    return this.activeParticipants.get(roomId);
+  }
+
+  private clearDebounceTimer(clientId: string) {
+    const existingTimer = this.joinDebounceTimers.get(clientId);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+      this.joinDebounceTimers.delete(clientId);
+    }
+  }
 
   @SubscribeMessage('join')
   handleJoin(
@@ -40,26 +58,48 @@ export class SignalingGateway {
     @ConnectedSocket() client: Socket,
   ) {
     const { roomId } = data;
-    this.logger.log(`Client ${client.id} joining room ${roomId}`);
+    this.logger.log(`Client ${client.id} attempting to join room ${roomId}`);
 
-    // Unirse a la sala
-    this.roomsService.joinRoom(roomId, client.id);
-    client.join(roomId);
+    const participants = this.getOrCreateParticipantSet(roomId);
 
-    // Obtener lista de participantes actuales
-    const participants = this.roomsService
-      .getRoomParticipants(roomId)
-      .filter((id) => id !== client.id);
+    // Check if user is already in the room
+    if (participants.has(client.id)) {
+      this.logger.log(`Client ${client.id} already in room ${roomId}`);
+      return;
+    }
 
-    // Notificar al nuevo participante sobre los usuarios existentes
-    client.emit('joined', {
-      roomId,
-      clientId: client.id,
-      participants,
-    });
+    // Clear any existing debounce timer
+    this.clearDebounceTimer(client.id);
 
-    // Notificar a los demás participantes sobre el nuevo usuario
-    client.to(roomId).emit('userJoined', { clientId: client.id });
+    // Set debounce timer for join event
+    const timer = setTimeout(() => {
+      // Add to room and track participation
+      this.roomsService.joinRoom(roomId, client.id);
+      participants.add(client.id);
+      client.join(roomId);
+
+      // Get current participants excluding the joining user
+      const currentParticipants = Array.from(participants).filter(
+        (id) => id !== client.id,
+      );
+
+      // Notify the joining user
+      client.emit('joined', {
+        roomId,
+        clientId: client.id,
+        participants: currentParticipants,
+      });
+
+      // Notify other participants
+      client.to(roomId).emit('userJoined', {
+        clientId: client.id,
+        timestamp: new Date().toISOString(),
+      });
+
+      this.joinDebounceTimers.delete(client.id);
+    }, this.JOIN_DEBOUNCE_TIME);
+
+    this.joinDebounceTimers.set(client.id, timer);
   }
 
   @SubscribeMessage('leave')
@@ -70,9 +110,44 @@ export class SignalingGateway {
     const { roomId } = data;
     this.logger.log(`Client ${client.id} leaving room ${roomId}`);
 
+    // Clear any pending join timer
+    this.clearDebounceTimer(client.id);
+
+    // Remove from tracking
+    const participants = this.activeParticipants.get(roomId);
+    if (participants) {
+      participants.delete(client.id);
+      if (participants.size === 0) {
+        this.activeParticipants.delete(roomId);
+      }
+    }
+
     this.roomsService.leaveRoom(roomId, client.id);
     client.leave(roomId);
-    client.to(roomId).emit('userLeft', { clientId: client.id });
+    client.to(roomId).emit('userLeft', {
+      clientId: client.id,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  // Implement cleanup on client disconnect
+  handleDisconnect(client: Socket) {
+    this.logger.log(`Client ${client.id} disconnected`);
+
+    // Clear any pending join timer
+    this.clearDebounceTimer(client.id);
+
+    // Remove from all rooms
+    this.activeParticipants.forEach((participants, roomId) => {
+      if (participants.has(client.id)) {
+        participants.delete(client.id);
+        this.roomsService.leaveRoom(roomId, client.id);
+        client.to(roomId).emit('userLeft', {
+          clientId: client.id,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    });
   }
 
   @SubscribeMessage('chatMessage')
