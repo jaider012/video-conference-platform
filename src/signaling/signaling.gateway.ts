@@ -22,6 +22,12 @@ interface ChatMessage {
   message: string;
   timestamp?: string;
 }
+interface StreamStateData {
+  roomId: string;
+  video: boolean;
+  audio: boolean;
+  isScreenSharing?: boolean;
+}
 
 @WebSocketGateway({
   cors: {
@@ -33,7 +39,7 @@ export class SignalingGateway {
   private logger = new Logger(SignalingGateway.name);
   private joinDebounceTimers: Map<string, NodeJS.Timeout> = new Map();
   private activeParticipants: Map<string, Set<string>> = new Map();
-  private readonly JOIN_DEBOUNCE_TIME = 2000; // 2 seconds debounce
+  private readonly JOIN_DEBOUNCE_TIME = 1000; // 2 seconds debounce
 
   constructor(private roomsService: RoomsService) {}
 
@@ -229,23 +235,48 @@ export class SignalingGateway {
 
   @SubscribeMessage('stream-state')
   handleStreamState(
-    @MessageBody()
-    data: {
-      roomId: string;
-      video: boolean;
-      audio: boolean;
-    },
+    @MessageBody() data: StreamStateData,
     @ConnectedSocket() client: Socket,
   ) {
-    const { roomId, video, audio } = data;
     this.logger.log(
-      `Stream state update from ${client.id}: video=${video}, audio=${audio}`,
+      `Stream state update from ${client.id}: video=${data.video}, audio=${data.audio}, screenSharing=${data.isScreenSharing}`,
     );
 
-    client.to(roomId).emit('stream-state-changed', {
+    client.to(data.roomId).emit('stream-state-changed', {
       clientId: client.id,
-      video,
-      audio,
+      video: data.video,
+      audio: data.audio,
+      isScreenSharing: data.isScreenSharing,
+    });
+  }
+
+  @SubscribeMessage('start-screen-share')
+  handleStartScreenShare(
+    @MessageBody() data: { roomId: string },
+    @ConnectedSocket() client: Socket,
+  ) {
+    this.logger.log(
+      `Client ${client.id} started screen sharing in room ${data.roomId}`,
+    );
+
+    client.to(data.roomId).emit('user-started-sharing', {
+      clientId: client.id,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  @SubscribeMessage('stop-screen-share')
+  handleStopScreenShare(
+    @MessageBody() data: { roomId: string },
+    @ConnectedSocket() client: Socket,
+  ) {
+    this.logger.log(
+      `Client ${client.id} stopped screen sharing in room ${data.roomId}`,
+    );
+
+    client.to(data.roomId).emit('user-stopped-sharing', {
+      clientId: client.id,
+      timestamp: new Date().toISOString(),
     });
   }
 }

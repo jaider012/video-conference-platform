@@ -312,21 +312,7 @@
         </button>
       </div>
     </div>
-    <div class="controls">
-      <button onclick="toggleVideo()" class="btn btn-secondary">
-        <i class="fas fa-video"></i> Toggle Video
-      </button>
-      <button onclick="toggleAudio()" class="btn btn-secondary">
-        <i class="fas fa-microphone"></i> Toggle Audio
-      </button>
-      <button
-        onclick="toggleScreenShare()"
-        class="btn btn-info"
-        id="screen-share-btn"
-      >
-        <i class="fas fa-desktop"></i> Share Screen
-      </button>
-    </div>
+
     <div id="room-container" class="room-container" style="display: none">
       <div class="video-section">
         <div class="controls">
@@ -810,124 +796,6 @@
           });
         }
       }
-
-      let screenStream = null;
-      let isScreenSharing = false;
-
-      async function toggleScreenShare() {
-        const screenShareBtn = document.getElementById('screen-share-btn');
-
-        if (!isScreenSharing) {
-          try {
-            screenStream = await navigator.mediaDevices.getDisplayMedia({
-              video: true,
-              audio: true,
-            });
-
-            // Reemplazar el track de video en todas las conexiones peer
-            const videoTrack = screenStream.getVideoTracks()[0];
-
-            for (const [peerId, pc] of peerConnections) {
-              const sender = pc
-                .getSenders()
-                .find((s) => s.track?.kind === 'video');
-              if (sender) {
-                sender.replaceTrack(videoTrack);
-              }
-            }
-
-            // Actualizar video local
-            document.getElementById('localVideo').srcObject = screenStream;
-
-            // Notificar al servidor
-            socket.emit('start-screen-share', { roomId: currentRoom });
-
-            // Actualizar estado
-            socket.emit('stream-state', {
-              roomId: currentRoom,
-              video: true,
-              audio: localStream.getAudioTracks()[0].enabled,
-              isScreenSharing: true,
-            });
-
-            // Actualizar botón
-            screenShareBtn.innerHTML =
-              '<i class="fas fa-stop"></i> Stop Sharing';
-            screenShareBtn.classList.replace('btn-info', 'btn-warning');
-            isScreenSharing = true;
-
-            // Manejar cuando el usuario detiene la compartición desde el navegador
-            screenStream.getVideoTracks()[0].addEventListener('ended', () => {
-              stopScreenSharing();
-            });
-          } catch (err) {
-            console.error('Error sharing screen:', err);
-            addChatMessage({
-              type: 'system',
-              message: 'Failed to share screen',
-              timestamp: new Date().toISOString(),
-            });
-          }
-        } else {
-          stopScreenSharing();
-        }
-      }
-
-      async function stopScreenSharing() {
-        if (screenStream) {
-          screenStream.getTracks().forEach((track) => track.stop());
-
-          // Revertir a la cámara
-          if (localStream) {
-            const videoTrack = localStream.getVideoTracks()[0];
-            for (const [peerId, pc] of peerConnections) {
-              const sender = pc
-                .getSenders()
-                .find((s) => s.track?.kind === 'video');
-              if (sender) {
-                sender.replaceTrack(videoTrack);
-              }
-            }
-            document.getElementById('localVideo').srcObject = localStream;
-          }
-
-          // Notificar al servidor
-          socket.emit('stop-screen-share', { roomId: currentRoom });
-
-          // Actualizar estado
-          socket.emit('stream-state', {
-            roomId: currentRoom,
-            video: localStream.getVideoTracks()[0].enabled,
-            audio: localStream.getAudioTracks()[0].enabled,
-            isScreenSharing: false,
-          });
-
-          // Actualizar botón
-          const screenShareBtn = document.getElementById('screen-share-btn');
-          screenShareBtn.innerHTML =
-            '<i class="fas fa-desktop"></i> Share Screen';
-          screenShareBtn.classList.replace('btn-warning', 'btn-info');
-          isScreenSharing = false;
-          screenStream = null;
-        }
-      }
-
-      // Agregar nuevos event listeners para compartir pantalla
-      socket.on('user-started-sharing', (data) => {
-        addChatMessage({
-          type: 'system',
-          message: `User ${data.clientId} started sharing their screen`,
-          timestamp: data.timestamp,
-        });
-      });
-
-      socket.on('user-stopped-sharing', (data) => {
-        addChatMessage({
-          type: 'system',
-          message: `User ${data.clientId} stopped sharing their screen`,
-          timestamp: data.timestamp,
-        });
-      });
     </script>
   </body>
 </html>
