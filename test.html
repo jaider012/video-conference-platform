@@ -1,88 +1,501 @@
 <!doctype html>
 <html>
   <head>
-    <title>Live Chat Room</title>
+    <title>Video Chat Room</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.3.2/socket.io.js"></script>
     <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        font-family: Arial, sans-serif;
+        padding: 20px;
+      }
+
+      .room-container {
+        display: flex;
+        gap: 20px;
+        max-width: 1400px;
+        margin: 0 auto;
+      }
+
+      .video-section {
+        flex: 2;
+      }
+
+      .chat-section {
+        flex: 1;
+        min-width: 300px;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        padding: 15px;
+        display: flex;
+        flex-direction: column;
+        height: calc(100vh - 150px);
+      }
+
+      .video-container {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 15px;
+        margin: 20px 0;
+      }
+
+      .video-wrapper {
+        position: relative;
+        background: #f8f9fa;
+        border-radius: 8px;
+        overflow: hidden;
+      }
+
+      .video-wrapper video {
+        width: 100%;
+        aspect-ratio: 16/9;
+        object-fit: cover;
+        border-radius: 8px;
+      }
+
+      .video-label {
+        position: absolute;
+        bottom: 10px;
+        left: 10px;
+        background: rgba(0, 0, 0, 0.5);
+        color: white;
+        padding: 5px 10px;
+        border-radius: 4px;
+        font-size: 14px;
+      }
+
+      .controls {
+        background: #f8f9fa;
+        padding: 15px;
+        border-radius: 8px;
+        display: flex;
+        gap: 10px;
+        margin-bottom: 15px;
+      }
+
+      .join-controls {
+        margin-bottom: 20px;
+      }
+
+      button {
+        padding: 8px 16px;
+        border: none;
+        border-radius: 4px;
+        background: #007bff;
+        color: white;
+        cursor: pointer;
+        transition: background 0.3s;
+      }
+
+      button:hover {
+        background: #0056b3;
+      }
+
+      button.danger {
+        background: #dc3545;
+      }
+
+      button.danger:hover {
+        background: #c82333;
+      }
+
+      input {
+        padding: 8px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        margin-right: 10px;
+      }
+
       #chat-messages {
-        height: 300px;
-        overflow-y: scroll;
-        border: 1px solid #ccc;
+        flex: 1;
+        overflow-y: auto;
         padding: 10px;
-        margin-bottom: 10px;
+        background: #fff;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        margin-bottom: 15px;
+      }
+
+      .chat-message {
+        margin-bottom: 8px;
+        padding: 8px;
+        border-radius: 4px;
+        background: #f8f9fa;
+      }
+
+      .chat-message.system {
+        background: #e2e3e5;
+        color: #383d41;
+      }
+
+      .chat-input-container {
+        display: flex;
+        gap: 10px;
+      }
+
+      .chat-input-container input {
+        flex: 1;
+      }
+
+      .status-indicator {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        display: inline-block;
+        margin-right: 5px;
+      }
+
+      .status-indicator.online {
+        background: #28a745;
+      }
+
+      .status-indicator.offline {
+        background: #dc3545;
       }
     </style>
   </head>
   <body>
-    <h1>Live Chat Room</h1>
-    <div>
+    <h1>Video Chat Room</h1>
+    <div class="join-controls">
       <input type="text" id="room-id" placeholder="Room ID" />
       <button onclick="joinRoom()">Join Room</button>
-      <button onclick="leaveRoom()">Leave Room</button>
+      <button onclick="leaveRoom()" class="danger">Leave Room</button>
     </div>
-    <div id="chat-container" style="display: none">
-      <div id="chat-messages"></div>
-      <input type="text" id="message-input" placeholder="Type a message..." />
-      <button onclick="sendMessage()">Send</button>
+
+    <div id="room-container" class="room-container" style="display: none">
+      <div class="video-section">
+        <div class="controls">
+          <button onclick="toggleVideo()">Toggle Video</button>
+          <button onclick="toggleAudio()">Toggle Audio</button>
+        </div>
+
+        <div class="video-container">
+          <div class="video-wrapper">
+            <video id="localVideo" autoplay playsinline muted></video>
+            <div class="video-label">Me</div>
+          </div>
+          <div id="remoteVideos"></div>
+        </div>
+      </div>
+
+      <div class="chat-section">
+        <h2>Live Chat</h2>
+        <div id="chat-messages"></div>
+        <div class="chat-input-container">
+          <input
+            type="text"
+            id="message-input"
+            placeholder="Type a message..."
+            onkeypress="if(event.key === 'Enter') sendMessage()"
+          />
+          <button onclick="sendMessage()">Send</button>
+        </div>
+      </div>
     </div>
 
     <script>
       const socket = io('http://localhost:3000');
       let currentRoom = null;
+      let localStream = null;
+      let peerConnections = new Map();
+      let currentUserId = null; // Añadido para identificar mensajes propios
+
+      const rtcConfig = {
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+      };
+
+      async function setupLocalStream() {
+        try {
+          localStream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: true,
+          });
+          document.getElementById('localVideo').srcObject = localStream;
+        } catch (err) {
+          console.error('Error accessing media devices:', err);
+          addChatMessage('Failed to access camera/microphone', 'system');
+        }
+      }
+
+      async function createPeerConnection(targetId) {
+        const pc = new RTCPeerConnection(rtcConfig);
+
+        if (localStream) {
+          localStream.getTracks().forEach((track) => {
+            pc.addTrack(track, localStream);
+          });
+        }
+
+        pc.onicecandidate = (event) => {
+          if (event.candidate) {
+            socket.emit('ice-candidate', {
+              roomId: currentRoom,
+              targetId: targetId,
+              candidate: event.candidate,
+            });
+          }
+        };
+
+        pc.ontrack = (event) => {
+          const remoteVideo = document.createElement('video');
+          remoteVideo.id = `remote-${targetId}`;
+          remoteVideo.autoplay = true;
+          remoteVideo.playsinline = true;
+          remoteVideo.srcObject = event.streams[0];
+
+          const wrapper = document.createElement('div');
+          wrapper.className = 'video-wrapper';
+          wrapper.id = `wrapper-${targetId}`;
+          wrapper.appendChild(remoteVideo);
+
+          const label = document.createElement('div');
+          label.className = 'video-label';
+          label.textContent = `User ${targetId}`;
+          wrapper.appendChild(label);
+
+          document.getElementById('remoteVideos').appendChild(wrapper);
+        };
+
+        peerConnections.set(targetId, pc);
+        return pc;
+      }
 
       socket.on('connect', () => {
         console.log('Connected to server');
       });
 
-      socket.on('joined', (data) => {
+      socket.on('joined', async (data) => {
         console.log('Joined room:', data);
         currentRoom = data.roomId;
-        document.getElementById('chat-container').style.display = 'block';
-      });
+        currentUserId = data.clientId; // Guardar el ID del usuario actual
+        document.getElementById('room-container').style.display = 'flex';
 
+        addChatMessage({
+          type: 'system',
+          message: `Welcome to room ${data.roomId}`,
+          timestamp: new Date().toISOString(),
+        });
+
+        await setupLocalStream();
+
+        for (const participantId of data.participants) {
+          const pc = await createPeerConnection(participantId);
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+
+          socket.emit('offer', {
+            roomId: currentRoom,
+            targetId: participantId,
+            offer: offer,
+          });
+        }
+      });
       socket.on('userJoined', (data) => {
         console.log('User joined:', data);
-        addChatMessage(`User ${data.clientId} joined the room`);
+        addChatMessage({
+          type: 'system',
+          message: `User ${data.clientId} joined the room`,
+          timestamp: new Date().toISOString(),
+        });
       });
 
       socket.on('userLeft', (data) => {
         console.log('User left:', data);
-        addChatMessage(`User ${data.clientId} left the room`);
+        addChatMessage({
+          type: 'system',
+          message: `User ${data.clientId} left the room`,
+          timestamp: new Date().toISOString(),
+        });
+
+        const pc = peerConnections.get(data.clientId);
+        if (pc) {
+          pc.close();
+          peerConnections.delete(data.clientId);
+        }
+
+        const wrapper = document.querySelector(`#wrapper-${data.clientId}`);
+        if (wrapper) {
+          wrapper.remove();
+        }
+      });
+      socket.on('offer', async (data) => {
+        const pc = await createPeerConnection(data.sourceId);
+        await pc.setRemoteDescription(data.offer);
+
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+
+        socket.emit('answer', {
+          roomId: currentRoom,
+          targetId: data.sourceId,
+          answer: answer,
+        });
+      });
+
+      socket.on('answer', async (data) => {
+        const pc = peerConnections.get(data.sourceId);
+        if (pc) {
+          await pc.setRemoteDescription(data.answer);
+        }
+      });
+
+      socket.on('ice-candidate', async (data) => {
+        const pc = peerConnections.get(data.sourceId);
+        if (pc) {
+          await pc.addIceCandidate(data.candidate);
+        }
       });
 
       socket.on('chatMessage', (data) => {
         addChatMessage(`${data.clientId}: ${data.message}`);
       });
 
-      function joinRoom() {
+      socket.on('stream-state-changed', (data) => {
+        addChatMessage(
+          `User ${data.clientId} ${data.video ? 'enabled' : 'disabled'} video`,
+          'system',
+        );
+        addChatMessage(
+          `User ${data.clientId} ${data.audio ? 'enabled' : 'disabled'} audio`,
+          'system',
+        );
+      });
+
+      async function joinRoom() {
         const roomId = document.getElementById('room-id').value;
-        socket.emit('join', { roomId });
+        if (roomId.trim()) {
+          socket.emit('join', { roomId });
+        }
       }
 
-      function leaveRoom() {
+      async function leaveRoom() {
         if (currentRoom) {
           socket.emit('leave', { roomId: currentRoom });
-          currentRoom = null;
-          document.getElementById('chat-container').style.display = 'none';
+
+          if (localStream) {
+            localStream.getTracks().forEach((track) => track.stop());
+            localStream = null;
+          }
+
+          peerConnections.forEach((pc) => pc.close());
+          peerConnections.clear();
+
+          document.getElementById('localVideo').srcObject = null;
+          document.getElementById('remoteVideos').innerHTML = '';
+          document.getElementById('room-container').style.display = 'none';
           document.getElementById('chat-messages').innerHTML = '';
+          currentRoom = null;
         }
       }
 
       function sendMessage() {
         const messageInput = document.getElementById('message-input');
-        const message = messageInput.value;
+        const message = messageInput.value.trim();
         if (message && currentRoom) {
           socket.emit('chatMessage', { roomId: currentRoom, message });
           messageInput.value = '';
         }
       }
 
-      function addChatMessage(message) {
+      function addChatMessage(message, type = 'normal') {
         const chatMessages = document.getElementById('chat-messages');
         const messageElement = document.createElement('div');
+        messageElement.className = `chat-message ${type}`;
         messageElement.textContent = message;
         chatMessages.appendChild(messageElement);
         chatMessages.scrollTop = chatMessages.scrollHeight;
+      }
+
+      async function toggleVideo() {
+        if (localStream) {
+          const videoTrack = localStream.getVideoTracks()[0];
+          videoTrack.enabled = !videoTrack.enabled;
+          socket.emit('stream-state', {
+            roomId: currentRoom,
+            video: videoTrack.enabled,
+            audio: localStream.getAudioTracks()[0].enabled,
+          });
+        }
+      }
+
+      async function toggleAudio() {
+        if (localStream) {
+          const audioTrack = localStream.getAudioTracks()[0];
+          audioTrack.enabled = !audioTrack.enabled;
+          socket.emit('stream-state', {
+            roomId: currentRoom,
+            video: localStream.getVideoTracks()[0].enabled,
+            audio: audioTrack.enabled,
+          });
+        }
+      }
+
+      socket.on('chatMessage', (data) => {
+        addChatMessage({
+          type: data.clientId === currentUserId ? 'self' : 'normal',
+          message: data.message,
+          timestamp: data.timestamp,
+          clientId: data.clientId,
+        });
+      });
+
+      socket.on('stream-state-changed', (data) => {
+        addChatMessage({
+          type: 'system',
+          message:
+            `User ${data.clientId} ${data.video ? 'enabled' : 'disabled'} video\n` +
+            `User ${data.clientId} ${data.audio ? 'enabled' : 'disabled'} audio`,
+          timestamp: new Date().toISOString(),
+        });
+      });
+
+      function formatTimestamp(isoString) {
+        const date = new Date(isoString);
+        return date.toLocaleTimeString();
+      }
+
+      function addChatMessage({
+        type = 'normal',
+        message,
+        timestamp,
+        clientId,
+      }) {
+        const chatMessages = document.getElementById('chat-messages');
+        const messageElement = document.createElement('div');
+        messageElement.className = `chat-message ${type}`;
+
+        if (type === 'system') {
+          messageElement.innerHTML = `
+                    <span class="content">${message}</span>
+                    <span class="timestamp">${formatTimestamp(timestamp)}</span>
+                `;
+        } else {
+          messageElement.innerHTML = `
+                    <span class="username">${clientId ? (clientId === currentUserId ? 'Me' : `User ${clientId}`) : 'System'}</span>
+                    <span class="timestamp">${formatTimestamp(timestamp)}</span>
+                    <div class="content">${message}</div>
+                `;
+        }
+
+        chatMessages.appendChild(messageElement);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+      }
+
+      function sendMessage() {
+        const messageInput = document.getElementById('message-input');
+        const message = messageInput.value.trim();
+        if (message && currentRoom) {
+          socket.emit('chatMessage', {
+            roomId: currentRoom,
+            message,
+          });
+          messageInput.value = '';
+        }
       }
     </script>
   </body>

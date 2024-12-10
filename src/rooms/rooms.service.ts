@@ -1,4 +1,3 @@
-// src/rooms/rooms.service.ts
 import { Injectable } from '@nestjs/common';
 
 @Injectable()
@@ -30,5 +29,10 @@ export class RoomsService {
 
   getRoomParticipants(roomId: string): string[] {
     return Array.from(this.rooms.get(roomId) || []);
+  }
+
+  isInRoom(roomId: string, clientId: string): boolean {
+    const room = this.rooms.get(roomId);
+    return room ? room.has(clientId) : false;
   }
 }

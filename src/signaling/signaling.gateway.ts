@@ -17,6 +17,12 @@ interface WebRTCData {
   candidate?: RTCIceCandidateInit;
 }
 
+interface ChatMessage {
+  roomId: string;
+  message: string;
+  timestamp?: string;
+}
+
 @WebSocketGateway({
   cors: {
     origin: '*',
@@ -67,6 +73,36 @@ export class SignalingGateway {
     this.roomsService.leaveRoom(roomId, client.id);
     client.leave(roomId);
     client.to(roomId).emit('userLeft', { clientId: client.id });
+  }
+
+  @SubscribeMessage('chatMessage')
+  handleChatMessage(
+    @MessageBody() data: ChatMessage,
+    @ConnectedSocket() client: Socket,
+  ) {
+    const { roomId, message } = data;
+    this.logger.log(
+      `Chat message from ${client.id} in room ${roomId}: ${message}`,
+    );
+
+    // Verificar si el cliente está en la sala
+    if (!this.roomsService.isInRoom(roomId, client.id)) {
+      this.logger.warn(
+        `Client ${client.id} tried to send message to room ${roomId} without joining`,
+      );
+      return;
+    }
+
+    // Agregar timestamp al mensaje
+    const messageWithMetadata = {
+      clientId: client.id,
+      message,
+      timestamp: new Date().toISOString(),
+      roomId,
+    };
+
+    // Emitir el mensaje a todos en la sala (incluyendo el emisor)
+    this.server.to(roomId).emit('chatMessage', messageWithMetadata);
   }
 
   @SubscribeMessage('offer')
