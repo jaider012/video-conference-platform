@@ -8,7 +8,7 @@ import { join } from 'path';
 describe('ViewsController (e2e)', () => {
   let app: INestApplication;
   const profilesPath = join(process.cwd(), 'data', 'profiles.json');
-  
+
   // Helper to clean up test data
   const cleanupProfiles = async () => {
     try {
@@ -21,7 +21,7 @@ describe('ViewsController (e2e)', () => {
   beforeAll(async () => {
     // Cleanup before tests
     await cleanupProfiles();
-    
+
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -119,4 +119,4 @@ describe('ViewsController (e2e)', () => {
       expect(getResponse.body[1]).toMatchObject(profile2);
     });
   });
-}); 
+});
