@@ -20,30 +20,30 @@ describe('RoomsService', () => {
     it('should create a new room', () => {
       // Spy on the internal Map to verify it's being set correctly
       const mapSpy = jest.spyOn(Map.prototype, 'set');
-      
+
       service.createRoom('test-room');
-      
+
       expect(mapSpy).toHaveBeenCalledWith('test-room', expect.any(Set));
-      
+
       // Verify the room exists
       expect(service.getRoomParticipants('test-room')).toEqual([]);
-      
+
       mapSpy.mockRestore();
     });
 
     it('should not duplicate existing rooms', () => {
       // Create a room first
       service.createRoom('test-room');
-      
+
       // Spy on Map.set after creation
       const mapSpy = jest.spyOn(Map.prototype, 'set');
-      
+
       // Try to create the same room again
       service.createRoom('test-room');
-      
+
       // Verify set wasn't called again
       expect(mapSpy).not.toHaveBeenCalled();
-      
+
       mapSpy.mockRestore();
     });
   });
@@ -52,35 +52,38 @@ describe('RoomsService', () => {
     it('should add client to existing room', () => {
       // Create a room first
       service.createRoom('test-room');
-      
+
       // Spy on Set.add
       const setSpy = jest.spyOn(Set.prototype, 'add');
-      
+
       service.joinRoom('test-room', 'client-1');
-      
+
       expect(setSpy).toHaveBeenCalledWith('client-1');
       expect(service.getRoomParticipants('test-room')).toEqual(['client-1']);
-      
+
       setSpy.mockRestore();
     });
 
     it('should create room if it does not exist and add client', () => {
       // Spy on createRoom method
       const createRoomSpy = jest.spyOn(service, 'createRoom');
-      
+
       service.joinRoom('new-room', 'client-1');
-      
+
       expect(createRoomSpy).toHaveBeenCalledWith('new-room');
       expect(service.getRoomParticipants('new-room')).toEqual(['client-1']);
-      
+
       createRoomSpy.mockRestore();
     });
 
     it('should allow multiple clients to join the same room', () => {
       service.joinRoom('test-room', 'client-1');
       service.joinRoom('test-room', 'client-2');
-      
-      expect(service.getRoomParticipants('test-room')).toEqual(['client-1', 'client-2']);
+
+      expect(service.getRoomParticipants('test-room')).toEqual([
+        'client-1',
+        'client-2',
+      ]);
     });
   });
 
@@ -93,7 +96,7 @@ describe('RoomsService', () => {
 
     it('should remove client from room', () => {
       service.leaveRoom('test-room', 'client-1');
-      
+
       expect(service.getRoomParticipants('test-room')).toEqual(['client-2']);
       expect(service.isInRoom('test-room', 'client-1')).toBe(false);
       expect(service.isInRoom('test-room', 'client-2')).toBe(true);
@@ -102,13 +105,13 @@ describe('RoomsService', () => {
     it('should delete room when last client leaves', () => {
       // Spy on Map.delete
       const mapDeleteSpy = jest.spyOn(Map.prototype, 'delete');
-      
+
       service.leaveRoom('test-room', 'client-1');
       service.leaveRoom('test-room', 'client-2');
-      
+
       expect(mapDeleteSpy).toHaveBeenCalledWith('test-room');
       expect(service.getRoomParticipants('test-room')).toEqual([]);
-      
+
       mapDeleteSpy.mockRestore();
     });
 
@@ -124,10 +127,12 @@ describe('RoomsService', () => {
       service.joinRoom('test-room', 'client-1');
       service.joinRoom('test-room', 'client-2');
       service.joinRoom('test-room', 'client-3');
-      
-      expect(service.getRoomParticipants('test-room')).toEqual(
-        ['client-1', 'client-2', 'client-3']
-      );
+
+      expect(service.getRoomParticipants('test-room')).toEqual([
+        'client-1',
+        'client-2',
+        'client-3',
+      ]);
     });
 
     it('should return empty array for non-existent room', () => {
@@ -152,4 +157,4 @@ describe('RoomsService', () => {
       expect(service.isInRoom('non-existent-room', 'client-1')).toBe(false);
     });
   });
-}); 
+});

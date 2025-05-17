@@ -106,7 +106,9 @@ describe('ViewsController', () => {
       const result = await controller.saveSyncProfile(mockProfileInput);
 
       expect(result).toEqual(mockSavedProfile);
-      expect(viewsService.saveSyncProfile).toHaveBeenCalledWith(mockProfileInput);
+      expect(viewsService.saveSyncProfile).toHaveBeenCalledWith(
+        mockProfileInput,
+      );
     });
   });
-}); 
+});
