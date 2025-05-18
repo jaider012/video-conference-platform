@@ -310,6 +310,9 @@
         >
           <i class="fas fa-sign-out-alt"></i> Leave
         </button>
+        <a href="/rooms" class="btn btn-info d-flex align-items-center gap-1">
+          <i class="fas fa-list"></i> Manage Rooms
+        </a>
       </div>
     </div>
 
@@ -364,6 +367,17 @@
 
       // Initialize JS Confetti
       const jsConfetti = new JSConfetti();
+
+      // Check URL for room ID
+      window.addEventListener('DOMContentLoaded', () => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const roomIdParam = urlParams.get('roomId');
+        
+        if (roomIdParam) {
+          document.getElementById('room-id').value = roomIdParam;
+          joinRoom();
+        }
+      });
 
       // Participant Manager Class
       class ParticipantManager {
@@ -705,6 +719,11 @@
         if (roomId.trim()) {
           participantManager.clear();
           socket.emit('join', { roomId });
+          
+          // Update URL without reloading the page
+          const url = new URL(window.location);
+          url.searchParams.set('roomId', roomId);
+          window.history.pushState({}, '', url);
         }
       }
 

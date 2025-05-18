@@ -33,6 +33,11 @@ export class ViewsController {
     res.sendFile(join(process.cwd(), 'public', 'reaction-sync.html'));
   }
 
+  @Get('rooms')
+  serveRoomManagementPage(@Res() res: Response) {
+    res.sendFile(join(process.cwd(), 'public', 'room-management.html'));
+  }
+
   @Get('api/sync-profiles')
   async getSyncProfiles(): Promise<SyncProfile[]> {
     return this.viewsService.getSyncProfiles();
